@@ -1,0 +1,19 @@
+services:
+  comfyui:
+    build:
+      context: .
+      args:
+        CIVITAI_TOKEN: ${CIVITAI_TOKEN}
+    ports:
+      - "127.0.0.1:8189:8189"
+    volumes:
+      - ./output:/app/ComfyUI/output
+      - ./input:/app/ComfyUI/input
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['1']
+              capabilities: [gpu]
+    restart: unless-stopped
