@@ -2,7 +2,7 @@
 FLUX 图片生成 Web UI (with RSA+AES-GCM encryption)
 用法: python app.py [--port 8080] [--comfyui http://127.0.0.1:8189]
 """
-import os, json, uuid, time, argparse, struct
+import os, json, uuid, time, argparse, struct, io
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, Response
@@ -459,7 +459,8 @@ async def upload(file: UploadFile = File(...)):
             fpath.unlink(missing_ok=True)
             return Response("No face detected in the image. Please upload a photo with a clearly visible face.", status_code=400)
     except Exception as e:
-        pass  # allow through if detection fails
+        print(f"[FACE CHECK] Error: {type(e).__name__}: {e}")
+        # Still reject - safer to require face
     return {"filename": fname}
 
 @app.get("/check_input/{filename}")
