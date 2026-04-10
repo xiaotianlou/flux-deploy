@@ -165,6 +165,11 @@ async function doUpload(file) {
     const formData = new FormData();
     formData.append('file', file);
     const resp = await fetch('/upload', { method: 'POST', body: formData });
+    if (!resp.ok) {
+        const msg = await resp.text();
+        alert(msg || 'Upload failed');
+        return false;
+    }
     const data = await resp.json();
     uploadedFileName = data.filename;
     const reader = new FileReader();
@@ -292,7 +297,7 @@ document.getElementById('adminPwd').addEventListener('keydown', (e) => { if(e.ke
 function checkAdmin() {
     adminKey = document.getElementById('adminPwd').value;
     fetch('/admin/list', {headers:{'X-Admin-Key': adminKey}}).then(r => {
-        if (r.ok) { document.getElementById('adminGate').style.display='none'; load(); }
+        if (r.ok) { document.getElementById('adminGate').style.display='none'; load(); checkGPU(); }
         else { document.getElementById('adminError').style.display='block'; }
     });
 }
@@ -327,7 +332,7 @@ async function toggleGPU() {
     await checkGPU();
     btn.disabled = false;
 }
-setTimeout(checkGPU, 500);
+// checkGPU called after admin login via checkAdmin()
 </script>
 <div class="top-actions">
   <button class="btn-refresh" onclick="load()">Refresh</button>
@@ -424,6 +429,20 @@ load();
 async def index():
     return HTML
 
+from PIL import Image
+import numpy as np
+
+_face_detector = None
+def get_face_detector():
+    global _face_detector
+    if _face_detector is None:
+        from insightface.app import FaceAnalysis
+        _face_detector = FaceAnalysis(name="antelopev2",
+            root=os.path.expanduser("~/ComfyUI/models/insightface"),
+            providers=["CPUExecutionProvider"])
+        _face_detector.prepare(ctx_id=-1, det_size=(320, 320))
+    return _face_detector
+
 @app.post("/upload")
 async def upload(file: UploadFile = File(...)):
     fname = f"{uuid.uuid4().hex[:8]}_{file.filename}"
@@ -431,6 +450,16 @@ async def upload(file: UploadFile = File(...)):
     fpath = INPUT_DIR / fname
     content = await file.read()
     fpath.write_bytes(content)
+    # Check for face
+    try:
+        img = Image.open(io.BytesIO(content)).convert("RGB")
+        img_np = np.array(img)
+        faces = get_face_detector().get(img_np)
+        if len(faces) == 0:
+            fpath.unlink(missing_ok=True)
+            return Response("No face detected in the image. Please upload a photo with a clearly visible face.", status_code=400)
+    except Exception as e:
+        pass  # allow through if detection fails
     return {"filename": fname}
 
 @app.get("/check_input/{filename}")
