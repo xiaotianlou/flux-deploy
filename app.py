@@ -193,9 +193,10 @@ async function ensureUploaded() {
 async function generate() {
     if (!uploadedFileName) { alert('Please upload a reference face first'); return; }
     const loraW = parseFloat(document.getElementById('loraWeight').value);
-    if (loraW > 0) {
+    if (loraW > 0 && !sessionStorage.getItem('loraPwd')) {
         const pwd = prompt('This feature requires a password:');
         if (pwd !== '1234') { alert('Wrong password'); return; }
+        sessionStorage.setItem('loraPwd', '1');
     }
     // Re-upload if input was deleted
     await ensureUploaded();
