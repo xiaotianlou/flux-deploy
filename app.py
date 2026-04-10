@@ -231,7 +231,7 @@ async function generate() {
             + '<br><a href="' + url + '" download="generated.png" style="color:#7c3aed;margin-top:12px;display:inline-block">Download</a>';
     } catch (e) {
         clearInterval(progressInterval);
-        resultArea.innerHTML = '<div class="status" style="color:#f55">Error: ' + e.message + '</div>';
+        resultArea.innerHTML = '<div class="status" style="color:#f55">Generation failed. The GPU engine may be offline.<br><br>Please contact the admin to start it.</div>';
     }
     btn.disabled = false;
     btn.textContent = 'Generate';
@@ -303,6 +303,32 @@ function checkAdmin() {
   <input type="file" id="keyFile" accept=".pem">
   <div class="key-status" id="keyStatus">Private key loaded</div>
 </div>
+<div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
+  <div><span style="font-size:14px;color:#aaa">ComfyUI GPU Engine</span><br><span id="gpuStatus" style="font-size:13px;color:#888">Checking...</span></div>
+  <button id="gpuBtn" onclick="toggleGPU()" style="padding:10px 24px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600">...</button>
+</div>
+<script>
+async function checkGPU() {
+    const r = await fetch('/admin/gpu_status', {headers:{'X-Admin-Key': adminKey}});
+    const d = await r.json();
+    document.getElementById('gpuStatus').textContent = d.running ? 'Running (' + d.vram + ')' : 'Stopped (GPU released)';
+    document.getElementById('gpuStatus').style.color = d.running ? '#4a4' : '#888';
+    document.getElementById('gpuBtn').textContent = d.running ? 'Stop (Free GPU)' : 'Start';
+    document.getElementById('gpuBtn').style.background = d.running ? '#c0392b' : '#27ae60';
+    document.getElementById('gpuBtn').style.color = '#fff';
+}
+async function toggleGPU() {
+    const btn = document.getElementById('gpuBtn');
+    const wasRunning = btn.textContent.startsWith('Stop');
+    btn.disabled = true;
+    btn.textContent = wasRunning ? 'Stopping...' : 'Starting...';
+    await fetch('/admin/gpu_toggle', {method:'POST', headers:{'X-Admin-Key': adminKey}});
+    await new Promise(r => setTimeout(r, wasRunning ? 3000 : 15000));
+    await checkGPU();
+    btn.disabled = false;
+}
+setTimeout(checkGPU, 500);
+</script>
 <div class="top-actions">
   <button class="btn-refresh" onclick="load()">Refresh</button>
   <button class="btn-del" onclick="deleteAll()">Delete All</button>
@@ -535,6 +561,46 @@ async def admin_delete_all(request: Request):
             await client.post(f"{COMFYUI}/api/history", json={"clear": True})
     except: pass
     return {"status": "deleted"}
+
+import subprocess, signal
+
+@app.get("/admin/gpu_status")
+async def gpu_status(request: Request):
+    if request.headers.get("X-Admin-Key") != "2209142017":
+        return Response("Forbidden", status_code=403)
+    result = subprocess.run(["pgrep", "-f", "python main.py.*--port 8189"], capture_output=True)
+    running = result.returncode == 0
+    vram = ""
+    if running:
+        try:
+            r = subprocess.run(["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader"], capture_output=True, text=True)
+            lines = r.stdout.strip().split("\n")
+            for line in lines:
+                if line.strip().startswith("1,"):
+                    vram = line.split(",")[1].strip()
+        except: pass
+    return {"running": running, "vram": vram}
+
+@app.post("/admin/gpu_toggle")
+async def gpu_toggle(request: Request):
+    if request.headers.get("X-Admin-Key") != "2209142017":
+        return Response("Forbidden", status_code=403)
+    result = subprocess.run(["pgrep", "-f", "python main.py.*--port 8189"], capture_output=True, text=True)
+    if result.returncode == 0:
+        # Running -> stop
+        pids = result.stdout.strip().split("\n")
+        for pid in pids:
+            try: os.kill(int(pid.strip()), signal.SIGKILL)
+            except: pass
+        return {"action": "stopped"}
+    else:
+        # Stopped -> start
+        subprocess.Popen(
+            "source ~/ComfyUI/venv/bin/activate && CUDA_VISIBLE_DEVICES=1 nohup python main.py --listen 127.0.0.1 --port 8189 > /tmp/comfyui.log 2>&1 &",
+            shell=True, cwd=os.path.expanduser("~/ComfyUI"),
+            executable="/bin/bash"
+        )
+        return {"action": "started"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=args.port)
