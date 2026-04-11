@@ -87,12 +87,13 @@ textarea:focus { outline: none; border-color: #555; }
 </div>
 <script>
 document.getElementById('accessCode').addEventListener('keydown', (e) => { if(e.key==='Enter') checkAccess(); });
+let accessCode = '';
 function checkAccess() {
-    const code = document.getElementById('accessCode').value;
-    if (code === '1234') { document.getElementById('loginGate').style.display = 'none'; sessionStorage.setItem('access', '1'); }
-    else { document.getElementById('loginError').style.display = 'block'; }
+    accessCode = document.getElementById('accessCode').value;
+    fetch('/check_access', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code:accessCode})})
+    .then(r => { if(r.ok){document.getElementById('loginGate').style.display='none';sessionStorage.setItem('access',accessCode)} else{document.getElementById('loginError').style.display='block'} });
 }
-if (sessionStorage.getItem('access') === '1') { document.getElementById('loginGate').style.display = 'none'; }
+if (sessionStorage.getItem('access')) { accessCode=sessionStorage.getItem('access'); document.getElementById('loginGate').style.display='none'; }
 </script>
 
 <div id="disclaimer" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px">
@@ -200,7 +201,8 @@ async function generate() {
     const loraW = parseFloat(document.getElementById('loraWeight').value);
     if (loraW > 0 && !sessionStorage.getItem('loraPwd')) {
         const pwd = prompt('This feature requires a password:');
-        if (pwd !== '1234') { alert('Wrong password'); return; }
+        const r = await fetch('/check_access', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code:pwd})});
+        if (!r.ok) { alert('Wrong password'); return; }
         sessionStorage.setItem('loraPwd', '1');
     }
     // Re-upload if input was deleted
@@ -224,7 +226,7 @@ async function generate() {
                 lora_weight: loraW, steps: parseInt(document.getElementById('steps').value),
                 guidance: parseFloat(document.getElementById('guidance').value),
                 width: parseInt(document.getElementById('width').value), height: parseInt(document.getElementById('height').value),
-                password: loraW > 0 ? '1234' : '', access: '1234',
+                password: loraW > 0 ? accessCode : '', access: accessCode,
             })
         });
         clearInterval(progressInterval);
@@ -460,6 +462,15 @@ def get_face_detector():
         _face_detector.prepare(ctx_id=-1, det_size=(320, 320))
     return _face_detector
 
+ACCESS_CODE = os.environ.get("ACCESS_CODE", "change_me")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change_me")
+
+@app.post("/check_access")
+async def check_access(body: dict):
+    if body.get("code") == ACCESS_CODE:
+        return {"ok": True}
+    return Response("Wrong code", status_code=403)
+
 @app.post("/upload")
 async def upload(file: UploadFile = File(...)):
     fname = f"{uuid.uuid4().hex[:8]}_{file.filename}"
@@ -496,13 +507,13 @@ async def get_output(filename: str):
 
 @app.post("/generate")
 async def generate_image(body: dict):
-    if body.get("access") != "1234":
+    if body.get("access") != ACCESS_CODE:
         return Response("Access denied", status_code=403)
     image = body["image"]
     prompt = body["prompt"]
     pulid_w = body.get("pulid_weight", 0.9)
     lora_w = body.get("lora_weight", 0)
-    if lora_w > 0 and body.get("password") != "1234":
+    if lora_w > 0 and body.get("password") != ACCESS_CODE:
         return Response("Wrong password", status_code=403)
     steps = body.get("steps", 30)
     guidance = body.get("guidance", 3.5)
@@ -577,7 +588,7 @@ from starlette.requests import Request
 
 @app.get("/admin/list")
 async def admin_list(request: Request):
-    if request.headers.get("X-Admin-Key") != "2209142017":
+    if request.headers.get("X-Admin-Key") != ADMIN_PASSWORD:
         return Response("Forbidden", status_code=403)
     files = []
     for f in sorted(OUTPUT_DIR.glob("*.enc"), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -589,7 +600,7 @@ async def admin_list(request: Request):
 
 @app.get("/admin/download/{filename}")
 async def admin_download(filename: str, key: str = ""):
-    if key != "2209142017":
+    if key != ADMIN_PASSWORD:
         return Response("Forbidden", status_code=403)
     fpath = OUTPUT_DIR / filename
     if not fpath.exists():
@@ -599,7 +610,7 @@ async def admin_download(filename: str, key: str = ""):
 
 @app.post("/admin/delete_all")
 async def admin_delete_all(request: Request):
-    if request.headers.get("X-Admin-Key") != "2209142017":
+    if request.headers.get("X-Admin-Key") != ADMIN_PASSWORD:
         return Response("Forbidden", status_code=403)
     for f in OUTPUT_DIR.glob("*.enc"):
         f.unlink()
@@ -613,7 +624,7 @@ import subprocess, signal
 
 @app.get("/admin/gpu_status")
 async def gpu_status(request: Request):
-    if request.headers.get("X-Admin-Key") != "2209142017":
+    if request.headers.get("X-Admin-Key") != ADMIN_PASSWORD:
         return Response("Forbidden", status_code=403)
     result = subprocess.run(["pgrep", "-f", "python main.py.*--port 8189"], capture_output=True)
     running = result.returncode == 0
@@ -630,7 +641,7 @@ async def gpu_status(request: Request):
 
 @app.post("/admin/gpu_toggle")
 async def gpu_toggle(request: Request):
-    if request.headers.get("X-Admin-Key") != "2209142017":
+    if request.headers.get("X-Admin-Key") != ADMIN_PASSWORD:
         return Response("Forbidden", status_code=403)
     result = subprocess.run(["pgrep", "-f", "python main.py.*--port 8189"], capture_output=True, text=True)
     if result.returncode == 0:

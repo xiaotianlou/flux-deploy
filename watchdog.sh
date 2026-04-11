@@ -18,7 +18,7 @@ fi
 # Web UI
 if ! pgrep -f "python app.py.*--port 8080" > /dev/null; then
     echo "$(date) - Web UI down, restarting..."
-    nohup python app.py --port 8080 > /tmp/webui.log 2>&1 &
+    ACCESS_CODE="${ACCESS_CODE:-1234}" ADMIN_PASSWORD="${ADMIN_PASSWORD:-change_me}" nohup python app.py --port 8080 > /tmp/webui.log 2>&1 &
     sleep 2
     echo "$(date) - Web UI started, pid: $!"
 fi
