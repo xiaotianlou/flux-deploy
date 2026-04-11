@@ -263,8 +263,8 @@ h1 { margin-bottom: 10px; }
 .key-status { color: #4a4; font-size: 13px; margin-top: 8px; display: none; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
 .card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; overflow: hidden; }
-.card .preview { width: 100%; height: 250px; display: flex; align-items: center; justify-content: center; background: #111; color: #444; font-size: 40px; }
-.card .preview img { width: 100%; height: 100%; object-fit: cover; }
+.card .preview { width: 100%; min-height: 200px; display: flex; align-items: center; justify-content: center; background: #111; color: #444; font-size: 40px; }
+.card .preview img { width: 100%; height: auto; display: block; }
 .card .info { padding: 12px; }
 .card .info .time { color: #888; font-size: 12px; }
 .card .info .size { color: #666; font-size: 12px; }
@@ -337,7 +337,8 @@ async function toggleGPU() {
 <div class="top-actions">
   <button class="btn-refresh" onclick="load()">Refresh</button>
   <button class="btn-del" onclick="deleteAll()">Delete All</button>
-  <button class="decrypt-btn" onclick="decryptAll()" style="padding:10px 20px;border-radius:8px;font-size:14px">Decrypt & Download All</button>
+  <button class="decrypt-btn" onclick="decryptAllView()" style="padding:10px 20px;border-radius:8px;font-size:14px">Decrypt & View All</button>
+  <button class="decrypt-btn" onclick="decryptAll()" style="padding:10px 20px;border-radius:8px;font-size:14px;background:#333">Decrypt & Download All</button>
 </div>
 <div class="gallery" id="gallery"></div>
 </div>
@@ -399,6 +400,22 @@ async function decryptOne(idx, filename) {
         const actions = card.querySelector('.actions');
         actions.innerHTML = '<a href="' + url + '" download="' + filename.replace('.enc','') + '" class="decrypt-btn" style="text-align:center;text-decoration:none;display:block;padding:8px;border-radius:6px">Save Image</a>';
     } catch(e) { alert('Decryption failed: ' + e.message); }
+}
+
+async function decryptAllView() {
+    if (!privateKey) { alert('Please load your private key first'); return; }
+    const resp = await fetch('/admin/list', { headers: { 'X-Admin-Key': adminKey } });
+    const files = await resp.json();
+    for (let i = 0; i < files.length; i++) {
+        try {
+            const r = await fetch('/admin/download/' + files[i].name + '?key=' + adminKey + '');
+            const encBytes = new Uint8Array(await r.arrayBuffer());
+            const imgBytes = await decryptEncFile(encBytes);
+            const blob = new Blob([imgBytes], { type: 'image/png' });
+            const url = URL.createObjectURL(blob);
+            document.getElementById('preview-' + i).innerHTML = '<img src="' + url + '">';
+        } catch(e) {}
+    }
 }
 
 async function decryptAll() {
