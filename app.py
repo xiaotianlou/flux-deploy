@@ -199,12 +199,6 @@ async function ensureUploaded() {
 async function generate() {
     if (!uploadedFileName) { alert('Please upload a reference face first'); return; }
     const loraW = parseFloat(document.getElementById('loraWeight').value);
-    if (loraW > 0 && !sessionStorage.getItem('loraPwd')) {
-        const pwd = prompt('This feature requires a password:');
-        const r = await fetch('/check_access', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code:pwd})});
-        if (!r.ok) { alert('Wrong password'); return; }
-        sessionStorage.setItem('loraPwd', '1');
-    }
     // Re-upload if input was deleted
     await ensureUploaded();
     const btn = document.getElementById('generateBtn');
@@ -448,6 +442,33 @@ load();
 async def index():
     return HTML
 
+EXTRA_HTML = HTML.replace(
+    'AI Photo Generator',
+    'AI Photo Generator (Extra)'
+).replace(
+    '<script>\nconst fileInput',
+    '<script>\nwindow.__IS_EXTRA__=true;\nconst fileInput'
+).replace(
+    '<button class="btn" id="generateBtn"',
+    '''<div style="margin-top:16px;padding-top:16px;border-top:1px solid #333">
+<div style="color:#888;font-size:12px;margin-bottom:12px">Extra Style LoRAs (default 0 = off)</div>
+<div class="params">
+<div class="param"><label>Style A</label><input type="number" id="lora_whdb" value="0" min="0" max="1.2" step="0.1"></div>
+<div class="param"><label>Style B</label><input type="number" id="lora_gnz" value="0" min="0" max="1.2" step="0.1"></div>
+<div class="param"><label>Style C</label><input type="number" id="lora_sf" value="0" min="0" max="1.2" step="0.1"></div>
+<div class="param"><label>Style D</label><input type="number" id="lora_sy" value="0" min="0" max="1.2" step="0.1"></div>
+</div>
+</div>
+<button class="btn" id="generateBtn"'''
+).replace(
+    'access: accessCode,',
+    '''access: accessCode, extra_loras: window.__IS_EXTRA__ ? {whdb:parseFloat(document.getElementById('lora_whdb').value||0),gnz:parseFloat(document.getElementById('lora_gnz').value||0),sf:parseFloat(document.getElementById('lora_sf').value||0),sy:parseFloat(document.getElementById('lora_sy').value||0)} : {},'''
+)
+
+@app.get("/extra", response_class=HTMLResponse)
+async def extra_page():
+    return EXTRA_HTML
+
 from PIL import Image
 import numpy as np
 
@@ -464,10 +485,12 @@ def get_face_detector():
 
 ACCESS_CODE = os.environ.get("ACCESS_CODE", "change_me")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change_me")
+EXTRA_PASSWORD = os.environ.get("EXTRA_PASSWORD", "7086")
 
 @app.post("/check_access")
 async def check_access(body: dict):
-    if body.get("code") == ACCESS_CODE:
+    code = body.get("code")
+    if code == ACCESS_CODE or code == EXTRA_PASSWORD:
         return {"ok": True}
     return Response("Wrong code", status_code=403)
 
@@ -507,14 +530,13 @@ async def get_output(filename: str):
 
 @app.post("/generate")
 async def generate_image(body: dict):
-    if body.get("access") != ACCESS_CODE:
+    access = body.get("access")
+    if access != ACCESS_CODE and access != EXTRA_PASSWORD:
         return Response("Access denied", status_code=403)
     image = body["image"]
     prompt = body["prompt"]
     pulid_w = body.get("pulid_weight", 0.9)
     lora_w = body.get("lora_weight", 0)
-    if lora_w > 0 and body.get("password") != ACCESS_CODE:
-        return Response("Wrong password", status_code=403)
     steps = body.get("steps", 30)
     guidance = body.get("guidance", 3.5)
     width = body.get("width", 1024)
@@ -522,19 +544,38 @@ async def generate_image(body: dict):
     seed = int(time.time()) % 2**32
     prefix = f"webui_{uuid.uuid4().hex[:6]}"
 
+    extra = body.get("extra_loras", {}) or {}
+    lora_files = [
+        ("seqing_master.safetensors", lora_w),
+        ("whdb.safetensors", extra.get("whdb", 0)),
+        ("gnz.safetensors", extra.get("gnz", 0)),
+        ("sf.safetensors", extra.get("sf", 0)),
+        ("sy.safetensors", extra.get("sy", 0)),
+    ]
+    nodes = {
+        "1": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "flux1-dev-F16.gguf"}},
+        "2": {"class_type": "DualCLIPLoader", "inputs": {"clip_name1": "t5xxl_fp16.safetensors", "clip_name2": "clip_l.safetensors", "type": "flux", "device": "default"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": "ae.safetensors"}},
+    }
+    prev_model, prev_clip = ["1", 0], ["2", 0]
+    next_id = 100
+    for lora_name, weight in lora_files:
+        if weight <= 0:
+            continue
+        node_id = str(next_id); next_id += 1
+        nodes[node_id] = {"class_type": "LoraLoader", "inputs": {"model": prev_model, "clip": prev_clip, "lora_name": lora_name, "strength_model": weight, "strength_clip": weight}}
+        prev_model, prev_clip = [node_id, 0], [node_id, 1]
+    final_model, final_clip = prev_model, prev_clip
+    nodes["5"] = {"class_type": "ModelSamplingFlux", "inputs": {"model": final_model, "max_shift": 1.15, "base_shift": 0.5, "width": width, "height": height}}
+
     workflow = {
-        "prompt": {
-            "1": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "flux1-dev-F16.gguf"}},
-            "2": {"class_type": "DualCLIPLoader", "inputs": {"clip_name1": "t5xxl_fp16.safetensors", "clip_name2": "clip_l.safetensors", "type": "flux", "device": "default"}},
-            "3": {"class_type": "VAELoader", "inputs": {"vae_name": "ae.safetensors"}},
-            "4": {"class_type": "LoraLoader", "inputs": {"model": ["1", 0], "clip": ["2", 0], "lora_name": "seqing_master.safetensors", "strength_model": lora_w, "strength_clip": lora_w}},
-            "5": {"class_type": "ModelSamplingFlux", "inputs": {"model": ["4", 0], "max_shift": 1.15, "base_shift": 0.5, "width": width, "height": height}},
+        "prompt": {**nodes,
             "6": {"class_type": "PulidFluxModelLoader", "inputs": {"pulid_file": "pulid_flux_v0.9.1.safetensors"}},
             "7": {"class_type": "PulidFluxEvaClipLoader", "inputs": {}},
             "8": {"class_type": "PulidFluxInsightFaceLoader", "inputs": {"provider": "CUDA"}},
             "9": {"class_type": "LoadImage", "inputs": {"image": image}},
             "10": {"class_type": "ApplyPulidFlux", "inputs": {"model": ["5", 0], "pulid_flux": ["6", 0], "eva_clip": ["7", 0], "face_analysis": ["8", 0], "image": ["9", 0], "weight": pulid_w, "start_at": 0.0, "end_at": 1.0, "fusion": "mean", "fusion_weight_max": 1.0, "fusion_weight_min": 0.0, "train_step": 1000, "use_gray": True}},
-            "11": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": prompt}},
+            "11": {"class_type": "CLIPTextEncode", "inputs": {"clip": final_clip, "text": prompt}},
             "12": {"class_type": "FluxGuidance", "inputs": {"conditioning": ["11", 0], "guidance": guidance}},
             "13": {"class_type": "BasicGuider", "inputs": {"model": ["10", 0], "conditioning": ["12", 0]}},
             "14": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
@@ -634,7 +675,7 @@ async def gpu_status(request: Request):
             r = subprocess.run(["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader"], capture_output=True, text=True)
             lines = r.stdout.strip().split("\n")
             for line in lines:
-                if line.strip().startswith("1,"):
+                if line.strip().startswith("2,"):
                     vram = line.split(",")[1].strip()
         except: pass
     return {"running": running, "vram": vram}
@@ -654,7 +695,7 @@ async def gpu_toggle(request: Request):
     else:
         # Stopped -> start
         subprocess.Popen(
-            "source ~/ComfyUI/venv/bin/activate && CUDA_VISIBLE_DEVICES=1 nohup python main.py --listen 127.0.0.1 --port 8189 > /tmp/comfyui.log 2>&1 &",
+            "source ~/ComfyUI/venv/bin/activate && CUDA_VISIBLE_DEVICES=2 nohup python main.py --listen 127.0.0.1 --port 8189 > /tmp/comfyui.log 2>&1 &",
             shell=True, cwd=os.path.expanduser("~/ComfyUI"),
             executable="/bin/bash"
         )
