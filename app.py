@@ -127,11 +127,14 @@ if (sessionStorage.getItem('access')) { accessCode=sessionStorage.getItem('acces
     <div class="panel" style="margin-top:20px">
       <h2>Prompt</h2>
       <textarea id="prompt" placeholder="Describe what you want...">a young woman in a red dress, standing on a beach at sunset, wind blowing hair, cinematic lighting, professional photo, detailed face</textarea>
+      <div style="margin-top:12px"><label style="font-size:12px;color:#888">Negative Prompt (things to avoid)</label>
+      <textarea id="negPrompt" style="min-height:60px;margin-top:4px" placeholder="ugly, blurry, deformed, bad anatomy, watermark, low quality">ugly, blurry, deformed, disfigured, bad anatomy, watermark, low quality, extra fingers</textarea></div>
       <div class="params">
         <div class="param"><label>PuLID Weight (face)</label><input type="number" id="pulidWeight" value="0.9" min="0" max="1.5" step="0.1"></div>
         <div class="param"><label>LoRA Weight</label><input type="number" id="loraWeight" value="0" min="0" max="1.2" step="0.1"></div>
         <div class="param"><label>Steps</label><input type="number" id="steps" value="30" min="10" max="50"></div>
         <div class="param"><label>Guidance</label><input type="number" id="guidance" value="3.5" min="1" max="10" step="0.5"></div>
+        <div class="param"><label>CFG (neg strength)</label><input type="number" id="cfg" value="1.0" min="1" max="5" step="0.1"></div>
         <div class="param"><label>Width</label><input type="number" id="width" value="1024" min="512" max="1536" step="64"></div>
         <div class="param"><label>Height</label><input type="number" id="height" value="1024" min="512" max="1536" step="64"></div>
       </div>
@@ -222,7 +225,7 @@ async function generate() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    image: uploadedFileName, prompt: document.getElementById('prompt').value,
+                    image: uploadedFileName, prompt: document.getElementById('prompt').value, neg_prompt: document.getElementById('negPrompt').value, cfg: parseFloat(document.getElementById('cfg').value),
                     pulid_weight: parseFloat(document.getElementById('pulidWeight').value),
                     lora_weight: loraW,
                     extra_loras: window.__IS_EXTRA__ ? {whdb:parseFloat(document.getElementById('lora_whdb').value||0),gnz:parseFloat(document.getElementById('lora_gnz').value||0),sf:parseFloat(document.getElementById('lora_sf').value||0),sy:parseFloat(document.getElementById('lora_sy').value||0)} : {},
@@ -548,6 +551,8 @@ async def generate_image(body: dict):
         return Response("Access denied", status_code=403)
     image = body["image"]
     prompt = body["prompt"]
+    neg_prompt = body.get("neg_prompt", "")
+    cfg_scale = body.get("cfg", 1.0)
     pulid_w = body.get("pulid_weight", 0.9)
     lora_w = body.get("lora_weight", 0)
     steps = body.get("steps", 30)
@@ -590,7 +595,8 @@ async def generate_image(body: dict):
             "10": {"class_type": "ApplyPulidFlux", "inputs": {"model": ["5", 0], "pulid_flux": ["6", 0], "eva_clip": ["7", 0], "face_analysis": ["8", 0], "image": ["9", 0], "weight": pulid_w, "start_at": 0.0, "end_at": 1.0, "fusion": "mean", "fusion_weight_max": 1.0, "fusion_weight_min": 0.0, "train_step": 1000, "use_gray": True}},
             "11": {"class_type": "CLIPTextEncode", "inputs": {"clip": final_clip, "text": prompt}},
             "12": {"class_type": "FluxGuidance", "inputs": {"conditioning": ["11", 0], "guidance": guidance}},
-            "13": {"class_type": "BasicGuider", "inputs": {"model": ["10", 0], "conditioning": ["12", 0]}},
+            "21": {"class_type": "CLIPTextEncode", "inputs": {"clip": final_clip, "text": neg_prompt}},
+            "13": {"class_type": "CFGGuider", "inputs": {"model": ["10", 0], "positive": ["12", 0], "negative": ["21", 0], "cfg": cfg_scale}},
             "14": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
             "15": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
             "16": {"class_type": "BasicScheduler", "inputs": {"model": ["10", 0], "scheduler": "simple", "steps": steps, "denoise": 1.0}},
