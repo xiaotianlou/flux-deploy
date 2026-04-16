@@ -466,10 +466,10 @@ EXTRA_HTML = HTML.replace(
     '''<div style="margin-top:16px;padding-top:16px;border-top:1px solid #333">
 <div style="color:#888;font-size:12px;margin-bottom:12px">Extra Style LoRAs (default 0 = off)</div>
 <div class="params">
-<div class="param"><label>Style A</label><input type="number" id="lora_whdb" value="0" min="0" max="1.2" step="0.1"></div>
-<div class="param"><label>Style B</label><input type="number" id="lora_gnz" value="0" min="0" max="1.2" step="0.1"></div>
-<div class="param"><label>Style C</label><input type="number" id="lora_sf" value="0" min="0" max="1.2" step="0.1"></div>
-<div class="param"><label>Style D</label><input type="number" id="lora_sy" value="0" min="0" max="1.2" step="0.1"></div>
+<div class="param"><label>WHDB</label><input type="number" id="lora_whdb" value="0" min="0" max="1.2" step="0.1"></div>
+<div class="param"><label>GNZ</label><input type="number" id="lora_gnz" value="0" min="0" max="1.2" step="0.1"></div>
+<div class="param"><label>SF</label><input type="number" id="lora_sf" value="0" min="0" max="1.2" step="0.1"></div>
+<div class="param"><label>SY</label><input type="number" id="lora_sy" value="0" min="0" max="1.2" step="0.1"></div>
 </div>
 <div class="params" style="margin-top:12px">
 <div class="param"><label>Batch Count</label><input type="number" id="batchCount" value="1" min="1" max="10"></div>
