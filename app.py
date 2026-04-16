@@ -631,7 +631,10 @@ async def generate_image(body: dict):
                             (OUTPUT_DIR / f"{filename}.enc").write_bytes(enc_bytes)
                             # Delete original + input + history
                             filepath.unlink(missing_ok=True)
-                            (INPUT_DIR / image).unlink(missing_ok=True)
+                            # Delete all input images (not just this one)
+                            for inp in INPUT_DIR.glob("*"):
+                                if inp.is_file():
+                                    inp.unlink(missing_ok=True)
                             try:
                                 await client.post(f"{COMFYUI}/api/history", json={"delete": [prompt_id]})
                             except: pass
