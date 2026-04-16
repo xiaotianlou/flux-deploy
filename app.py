@@ -210,26 +210,39 @@ async function generate() {
     const progressInterval = setInterval(() => {
         if (progress < 90) { progress += 2; document.getElementById('progressBar').style.width = progress + '%'; }
     }, 1000);
+    const batchEl = document.getElementById('batchCount');
+    const batchCount = batchEl ? parseInt(batchEl.value) || 1 : 1;
+    const totalBatch = Math.min(Math.max(batchCount, 1), 10);
+    const allImages = [];
     try {
-        const resp = await fetch('/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                image: uploadedFileName, prompt: document.getElementById('prompt').value,
-                pulid_weight: parseFloat(document.getElementById('pulidWeight').value),
-                lora_weight: loraW, steps: parseInt(document.getElementById('steps').value),
-                guidance: parseFloat(document.getElementById('guidance').value),
-                width: parseInt(document.getElementById('width').value), height: parseInt(document.getElementById('height').value),
-                password: loraW > 0 ? accessCode : '', access: accessCode,
-            })
-        });
+        for (let b = 0; b < totalBatch; b++) {
+            if (totalBatch > 1) { btn.textContent = 'Generating ' + (b+1) + '/' + totalBatch + '...'; }
+            await ensureUploaded();
+            const resp = await fetch('/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    image: uploadedFileName, prompt: document.getElementById('prompt').value,
+                    pulid_weight: parseFloat(document.getElementById('pulidWeight').value),
+                    lora_weight: loraW,
+                    extra_loras: window.__IS_EXTRA__ ? {whdb:parseFloat(document.getElementById('lora_whdb').value||0),gnz:parseFloat(document.getElementById('lora_gnz').value||0),sf:parseFloat(document.getElementById('lora_sf').value||0),sy:parseFloat(document.getElementById('lora_sy').value||0)} : {},
+                    steps: parseInt(document.getElementById('steps').value),
+                    guidance: parseFloat(document.getElementById('guidance').value),
+                    width: parseInt(document.getElementById('width').value), height: parseInt(document.getElementById('height').value),
+                    access: accessCode,
+                })
+            });
+            if (!resp.ok) throw new Error(await resp.text());
+            const blob = await resp.blob();
+            allImages.push(URL.createObjectURL(blob));
+            if (totalBatch > 1) { document.getElementById('progressBar').style.width = ((b+1)/totalBatch*100) + '%'; }
+        }
         clearInterval(progressInterval);
-        if (!resp.ok) throw new Error(await resp.text());
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
         document.getElementById('progressBar').style.width = '100%';
-        resultArea.innerHTML = '<img src="' + url + '" style="max-width:100%;border-radius:8px">'
-            + '<br><a href="' + url + '" download="generated.png" style="color:#7c3aed;margin-top:12px;display:inline-block">Download</a>';
+        resultArea.innerHTML = allImages.map((url, i) =>
+            '<div style="margin-bottom:16px"><img src="' + url + '" style="max-width:100%;border-radius:8px">'
+            + '<br><a href="' + url + '" download="generated_' + (i+1) + '.png" style="color:#7c3aed;font-size:13px">Download #' + (i+1) + '</a></div>'
+        ).join('');
     } catch (e) {
         clearInterval(progressInterval);
         resultArea.innerHTML = '<div class="status" style="color:#f55">Generation failed. The GPU engine may be offline.<br><br>Please contact the admin to start it.</div>';
@@ -458,11 +471,11 @@ EXTRA_HTML = HTML.replace(
 <div class="param"><label>Style C</label><input type="number" id="lora_sf" value="0" min="0" max="1.2" step="0.1"></div>
 <div class="param"><label>Style D</label><input type="number" id="lora_sy" value="0" min="0" max="1.2" step="0.1"></div>
 </div>
+<div class="params" style="margin-top:12px">
+<div class="param"><label>Batch Count</label><input type="number" id="batchCount" value="1" min="1" max="10"></div>
+</div>
 </div>
 <button class="btn" id="generateBtn"'''
-).replace(
-    'access: accessCode,',
-    '''access: accessCode, extra_loras: window.__IS_EXTRA__ ? {whdb:parseFloat(document.getElementById('lora_whdb').value||0),gnz:parseFloat(document.getElementById('lora_gnz').value||0),sf:parseFloat(document.getElementById('lora_sf').value||0),sy:parseFloat(document.getElementById('lora_sy').value||0)} : {},'''
 )
 
 @app.get("/extra", response_class=HTMLResponse)
