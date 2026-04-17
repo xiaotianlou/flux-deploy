@@ -228,7 +228,7 @@ async function generate() {
                     image: uploadedFileName, prompt: document.getElementById('prompt').value, neg_prompt: document.getElementById('negPrompt').value, cfg: parseFloat(document.getElementById('cfg').value),
                     pulid_weight: parseFloat(document.getElementById('pulidWeight').value),
                     lora_weight: loraW,
-                    extra_loras: window.__IS_EXTRA__ ? {whdb:parseFloat(document.getElementById('lora_whdb').value||0),gnz:parseFloat(document.getElementById('lora_gnz').value||0),sf:parseFloat(document.getElementById('lora_sf').value||0),sy:parseFloat(document.getElementById('lora_sy').value||0),cwwy:parseFloat(document.getElementById('lora_cwwy').value||0)} : {},
+                    extra_loras: window.__IS_EXTRA__ ? {whdb:parseFloat(document.getElementById('lora_whdb').value||0),gnz:parseFloat(document.getElementById('lora_gnz').value||0),sf:parseFloat(document.getElementById('lora_sf').value||0),sy:parseFloat(document.getElementById('lora_sy').value||0)} : {},
                     steps: parseInt(document.getElementById('steps').value),
                     guidance: parseFloat(document.getElementById('guidance').value),
                     width: parseInt(document.getElementById('width').value), height: parseInt(document.getElementById('height').value),
@@ -473,7 +473,6 @@ EXTRA_HTML = HTML.replace(
 <div class="param"><label>GNZ</label><input type="number" id="lora_gnz" value="0" min="0" max="1.2" step="0.1"></div>
 <div class="param"><label>SF</label><input type="number" id="lora_sf" value="0" min="0" max="1.2" step="0.1"></div>
 <div class="param"><label>SY</label><input type="number" id="lora_sy" value="0" min="0" max="1.2" step="0.1"></div>
-<div class="param"><label>CWWY</label><input type="number" id="lora_cwwy" value="0" min="0" max="1.2" step="0.1"></div>
 </div>
 <div class="params" style="margin-top:12px">
 <div class="param"><label>Batch Count</label><input type="number" id="batchCount" value="1" min="1" max="10"></div>
@@ -570,7 +569,6 @@ async def generate_image(body: dict):
         ("gnz.safetensors", extra.get("gnz", 0)),
         ("sf.safetensors", extra.get("sf", 0)),
         ("sy.safetensors", extra.get("sy", 0)),
-        ("cwwy.safetensors", extra.get("cwwy", 0)),
     ]
     nodes = {
         "1": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "flux1-dev-F16.gguf"}},
